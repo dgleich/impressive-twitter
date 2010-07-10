@@ -21,7 +21,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 __title__   = "Impressive"
-__version__ = "0.10.2"
+__version__ = "0.10.2-twitter"
 __author__  = "Martin J. Fiedler"
 __email__   = "martin.fiedler@gmx.net"
 __website__ = "http://impressive.sourceforge.net/"
@@ -69,7 +69,7 @@ PAR = 1.0
 PollInterval = 0
 PageRangeStart = 0
 PageRangeEnd = 999999
-FontSize = 14
+FontSize = 18
 FontTextureWidth = 512
 FontTextureHeight = 256
 Gamma = 1.0
@@ -84,7 +84,7 @@ CursorHotspot = (0, 0)
 MinutesOnly = False
 OSDMargin = 16
 OSDAlpha = 1.0
-OSDTimePos = TopRight
+OSDTimePos = BottomRight
 OSDTitlePos = BottomLeft
 OSDPagePos = BottomRight
 OSDStatusPos = TopLeft
@@ -94,6 +94,8 @@ OSDStatusPos = TopLeft
 import random, getopt, os, types, re, codecs, tempfile, glob, StringIO, md5, re
 import traceback
 from math import *
+
+import tweets
 
 # initialize some platform-specific settings
 if os.name == "nt":
@@ -132,8 +134,8 @@ else:
     pdftkPath = "pdftk"
     spawn = os.spawnvp
     FileNameEscape = ""
-    FontPath = ["/usr/share/fonts", "/usr/local/share/fonts", "/usr/X11R6/lib/X11/fonts/TTF"]
-    FontList = ["DejaVuSans.ttf", "Vera.ttf", "Verdana.ttf"]
+    FontPath = ["/usr/share/fonts", "/usr/local/share/fonts", "/usr/X11R6/lib/X11/fonts/TTF", "gillsans"]
+    FontList = ["GIL_____.TTF","DejaVuSans.ttf", "Vera.ttf", "Verdana.ttf"]
     def RunURL(url):
         try:
             spawn(os.P_NOWAIT, "xdg-open", ["xdg-open", url])
@@ -241,6 +243,11 @@ CursorVisible = True
 OverviewMode = False
 LastPage = 0
 WantStatus = False
+
+TwitterDisplay = True
+TwitterAnimate = False
+TwitterAnimateStart = None
+TwitterAnimateTime = 500. # in milliseconds (do not forget the decimal!
 
 # tool constants (used in info scripts)
 FirstTimeOnly = 2
@@ -2027,6 +2034,71 @@ def SaveInfoScript(filename):
 
 ##### OPENGL RENDERING #########################################################
 
+class TwitterTweetQueue:
+    def __init__(self):
+        self.twitter = tweets.TweetStream(["#lastfm"])
+        self.new_tweets = []
+        self.tweets = []
+        
+    def pending(self):
+        if len(self.new_tweets) > 0:
+            return True
+        else:
+            if self.twitter.check_for_new_tweets():
+                # snatch the tweets
+                new_tweets = self.twitter.tweets(new_only=True)
+                print "Got %i new tweets -- total pending=%i"%(
+                    len(new_tweets),len(new_tweets)+len(self.new_tweets))
+                for t in reversed(new_tweets):
+                    self.new_tweets.insert(0,t)
+                return True
+            else:
+                return False
+    
+    def pop(self):
+        """ Move a tweet from the pending queue to the tweeted queue"""
+        if len(self.new_tweets) > 0:
+            t = self.new_tweets.pop()
+            self.tweets.insert(0,t)
+            return t
+        else:
+            return None
+            
+twitter = TwitterTweetQueue()            
+        
+
+def TwitterDisplayUpdate():
+    global TwitterAnimate, TwitterAnimateStart, TwitterAnimateTime
+    offset = 0.
+    progress = 1.
+    if TwitterAnimate:
+        if TwitterAnimateStart is None:
+            TwitterAnimateStart = pygame.time.get_ticks()
+        progress = (
+            1.*pygame.time.get_ticks() - 1.*TwitterAnimateStart)/TwitterAnimateTime
+        if progress > 1.:
+            twitter.pop()
+            TwitterAnimate = False
+            TwitterAnimateStart = None
+            offset = 0.
+            progress = 1.
+        else:
+            offset = OSDFont.GetLineHeight()*(progress)
+    ts = twitter.tweets
+    ntweets = 5
+    
+    for i,t in enumerate(ts[0:ntweets]):
+        text =  t['from_user'] + ": " + t['text']
+        alpha = 1.
+        if i==ntweets-1 and TwitterAnimate:
+            alpha = 1.-progress
+        DrawOSD(
+               x=OSDMargin,
+               y=ScreenHeight - 2*OSDMargin - OSDFont.GetLineHeight()*(ntweets-i)+offset,
+               text=text,halign=Left,valign=Up,alpha=alpha)
+        
+        
+
 # draw OSD overlays
 def DrawOverlays():
     reltime = pygame.time.get_ticks() - StartTime
@@ -2057,6 +2129,8 @@ def DrawOverlays():
     if TimeDisplay:
         t = reltime / 1000
         DrawOSDEx(OSDTimePos, FormatTime(t, MinutesOnly))
+    if TwitterDisplay:
+        TwitterDisplayUpdate()
     if CurrentOSDComment and (OverviewMode or not(TransitionRunning)):
         DrawOSD(ScreenWidth/2, \
                 ScreenHeight - 3*OSDMargin - FontSize, \
@@ -2638,6 +2712,17 @@ def TimerTick():
         redraw = True
     CurrentTime = newtime
     return redraw
+    
+def TwitterTickUpdate():
+    global TwitterAnimate, twitter
+    redraw = False
+    if TwitterAnimate:
+        redraw = True
+    else:
+        if twitter.pending():
+            TwitterAnimate = True
+            redraw = True
+    return redraw
 
 # set cursor visibility
 def SetCursor(visible):
@@ -3201,7 +3286,7 @@ def HandleEvent(event):
                     thread.start_new_thread(RenderThread, (Pcurrent, Pnext))
 
     elif event.type == USEREVENT_TIMER_UPDATE:
-        if TimerTick():
+        if TimerTick() or TwitterTickUpdate():
             DrawCurrentPage()
 
 
