@@ -14,6 +14,7 @@ python tweets.py "@engadget"
 History
 -------
 :2010-07-07: Initial coding without filtering implemented.
+:2010-07-08: Implemented queue (pop/pending) interface
 
 Todo
 ----
@@ -39,10 +40,26 @@ twitter = twython.setup()
 class TweetStream:
     """
     A TweetStream is a stream of twitter messages in response
-    to a search.  This code implements a simple cached history
-    with a simple update function.  
+    to a search.  This code implements a nice queue view of this
+    stream.
+    
+    s = TweetStream(["#lastfm"])
+    while 1:
+        while s.pending():
+            print s.pop()["text"]
+        time.sleep(20)
+        
+    In can also be used in batch mode.    
+    while 1:
+        if s.check_for_new_tweets():
+            ts = s.tweets(new_tweets=True)
+            for t in ts:
+                print t["text"]
+        time.sleep(20)
+    
     """        
-    def __init__(self,terms,rate=150,filtered=True,max_history=None):
+    def __init__(self,terms,rate=150,filtered=True,max_history=None,
+        keep_initial=True):
         """
         @param terms the list of search terms
         @param rate the rate of requests per hour
@@ -61,6 +78,7 @@ class TweetStream:
         self.last_status_id = 0
         self.last_query = 0
         self.cache = []
+        self.queue_position = 0
         self.new_results = 0
         self._update_cache()
         
@@ -68,7 +86,7 @@ class TweetStream:
         # check that we haven't exceeded the rate
         curtime = time.time()
         if curtime - self.last_query < 3600/self.rate:
-            print "TweetStream:_update_cache skipped due to rate limit"
+            #print "TweetStream:_update_cache skipped due to rate limit"
             return
         # stupid initialization code
         if self.last_status_id is 0:
@@ -83,7 +101,7 @@ class TweetStream:
             # sort results by id
             results = sorted(results,key=operator.itemgetter('id'))
         else:
-            print "TweetStream:_update_cache did not receive results"
+            #print "TweetStream:_update_cache did not receive results"
             results = []
             
         for r in results:
@@ -95,30 +113,36 @@ class TweetStream:
                     if True:
                         self.cache.insert(0,r)
                         self.new_results += 1
+                        self.queue_position += 1
                     else:
-                        print "TweetStream:_update_cache filtered result"
+                        pass
+                        #print "TweetStream:_update_cache filtered result"
         
             
         if 'max_id' in rval:
             self.last_status_id = max(self.last_status_id,rval['max_id'])
-            print "TweetStream:_update_cache set last_status_id=%i"%(
-                    self.last_status_id)
+            #print "TweetStream:_update_cache set last_status_id=%i"%(
+            #        self.last_status_id)
         else:
             if len(results) > 0:
                 max_id = 0
                 for r in results:
                     max_id = max(max_id,r['id'])
                 self.last_status_id = max(self.last_status_id,max_id)
-                print "TweetStream:_update_cache computed last_status_id=%i"%(
-                    self.last_status_id)
+                #print "TweetStream:_update_cache computed last_status_id=%i"%(
+                #    self.last_status_id)
                     
         # check history truncation
         if self.max_history is not None and len(self.cache)>self.max_history:
             self.cache = self.cache[0:self.max_history]
             self.new_results = min(self.new_results,self.max_history)
+            if self.queue_position > len(self.cache):
+                self.queue_position = len(self.cache)
         
         
     def tweets(self,new_only=False):
+        """ Get the full database of tweets, including unpopped ones """
+        
         new_results = self.new_results
         self.new_results = 0
         if new_only:
@@ -128,7 +152,30 @@ class TweetStream:
                 return []
         else:
             return self.cache
+            
+    def pop(self):
+        """ Access the next tweet in the stream """
+        if self.queue_position > 0:
+            self.queue_position -= 1
+            assert(self.queue_position < len(self.cache))
+            return self.cache[self.queue_position]
+        else:
+            return None
+            
+    def tail(self):
+        """ Access tweets that have already been popped """
+        return self.cache[self.queue_position:]
+    
+    def pending(self,update=True):
+        """ Return true if there are unpopped tweets """
         
+        if self.queue_position > 0 and len(self.cache) > 0:
+            return True
+        else:
+            if update:
+                self._update_cache()
+                return self.pending(update=False)
+            return False
         
     def check_for_new_tweets(self):
         self._update_cache()
@@ -155,6 +202,10 @@ def main():
     
 
 if __name__=='__main__':
-    main()
+    s = TweetStream(["#lastfm"])
+    while 1:
+        while s.pending():
+            print s.pop()["text"]
+        time.sleep(20)
 
 
