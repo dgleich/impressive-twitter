@@ -2085,17 +2085,22 @@ def TwitterDisplayUpdate():
         else:
             offset = OSDFont.GetLineHeight()*(progress)
     ts = twitter.tweets
-    ntweets = 5
+    ntweets = 3
     
     for i,t in enumerate(ts[0:ntweets]):
         text =  t['from_user'] + ": " + t['text']
-        alpha = 1.
+        alpha = 0.5
         if i==ntweets-1 and TwitterAnimate:
-            alpha = 1.-progress
-        DrawOSD(
-               x=OSDMargin,
-               y=ScreenHeight - 2*OSDMargin - OSDFont.GetLineHeight()*(ntweets-i)+offset,
-               text=text,halign=Left,valign=Up,alpha=alpha)
+            alpha = 0.5-progress
+        
+        if alpha > 1.0: alpha = 1.0
+        x=OSDMargin
+        y=ScreenHeight - 2*OSDMargin - OSDFont.GetLineHeight()*(ntweets-i)+offset
+        if TextureTarget != GL_TEXTURE_2D:
+            glDisable(TextureTarget)
+        OSDFont.Draw((x, y), text, align=Left, alpha=alpha, 
+            color=(238./255.,236./255.,225./255.),beveled=True)
+        
         
         
 
