@@ -34,6 +34,8 @@ import operator
 
 import twython.core as twython
 
+import text_censor
+
 # get a twitter object
 twitter = twython.setup()
 
@@ -75,12 +77,17 @@ class TweetStream:
         self.query = " ".join(terms)
         self.max_history = max_history
         
+        if filtered:
+            self.censor = text_censor.ShortTextCensor()
+        
         self.last_status_id = 0
         self.last_query = 0
         self.cache = []
         self.queue_position = 0
         self.new_results = 0
         self._update_cache()
+        
+        self.censor = text_censor.ShortTextCensor()
         
     def _update_cache(self):
         # check that we haven't exceeded the rate
@@ -110,13 +117,15 @@ class TweetStream:
                 # this post is feasible
                 if self.filtered:
                     # check if it passes the filter
-                    if True:
+                    if self.censor.check(r['text']) is False:
                         self.cache.insert(0,r)
                         self.new_results += 1
                         self.queue_position += 1
                     else:
-                        pass
-                        #print "TweetStream:_update_cache filtered result"
+                        print "TweetStream:_update_cache filtered %s: %s\n"%(
+                            r['from_user'], r['text'])
+                        
+                        
         
             
         if 'max_id' in rval:
