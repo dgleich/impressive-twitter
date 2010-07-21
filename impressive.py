@@ -22,8 +22,8 @@
 
 __title__   = "Impressive"
 __version__ = "0.10.2-twitter"
-__author__  = "Martin J. Fiedler"
-__email__   = "martin.fiedler@gmx.net"
+__author__  = "Martin J. Fiedler and David F. Gleich"
+__email__   = "martin.fiedler@gmx.net and dgleich@stanford.edu"
 __website__ = "http://impressive.sourceforge.net/"
 import sys
 def greet(): print >>sys.stderr, "Welcome to", __title__, "version", __version__
@@ -94,6 +94,7 @@ OSDStatusPos = TopLeft
 import random, getopt, os, types, re, codecs, tempfile, glob, StringIO, md5, re
 import traceback
 from math import *
+import time
 
 import tweets
 
@@ -2059,12 +2060,106 @@ class TwitterTweetQueue:
         """ Move a tweet from the pending queue to the tweeted queue"""
         if len(self.new_tweets) > 0:
             t = self.new_tweets.pop()
+            t['pop_time'] = time.time()
             self.tweets.insert(0,t)
+            
             return t
         else:
             return None
             
-twitter = TwitterTweetQueue()            
+twitter = TwitterTweetQueue()       
+
+class TwitterDisplayManager:
+    def __init__(self,max_tweets=3,animate_time = 500):
+        self.max_tweets = max_tweets
+        self.animate_time = animate_time
+        self.tweets_displayed = 0
+        self.tweet_display_time = 60
+        self.reset_animation()
+        
+    def update(self):
+        """ 
+        Check if we should start doing something! 
+        
+        @return True if something changed
+        @return False if we didn't change anything
+        
+        """
+        if self.animating is False:
+            # this means we aren't currently doing anything, but
+            # could start here.
+            if twitter.pending():
+                # there is a tweet pending!
+                if self.tweets_displayed < self.max_tweets:
+                    twitter.pop()
+                    self.tweets_displayed += 1
+                    return True
+                else:
+                    self.start_animation(new_tweet=True)
+                    return True
+            else:
+                # check if we should expire a tweet
+                if self.tweets_displayed > 0:
+                    ts = twitter.tweets
+                    if len(ts) > 0:
+                        t = ts[self.tweets_displayed-1]
+                        if time.time() > t['pop_time'] + self.tweet_display_time:
+                            # expire this tweet
+                            self.start_animation(new_tweet=False)
+                            return True
+        return False
+    
+    def redraw(self):
+        if self.animating: return True
+        return True
+        
+    def reset_animation(self):
+        self.animate_start = None
+        self.animating = False
+        self.tweet_arriving = False
+        
+    def start_animation(self,new_tweet=False):
+        self.tweet_arriving = new_tweet
+        self.animate_start =  pygame.time.get_ticks()
+        self.animating = True
+    
+    def draw(self):
+        offset = 0.
+        progress = 1.
+        if self.animating:
+            if self.animate_start is None:
+                self.animate_start = pygame.time.get_ticks()
+            progress = (
+                1.*pygame.time.get_ticks() - 1.*self.animate_start
+                )/self.animate_time
+            if progress > 1.:
+                if self.tweet_arriving:
+                    # we only animate arrival if the tweet queue is full
+                    twitter.pop()
+                else:
+                    # a tweet is departing...
+                    self.tweets_displayed -= 1
+                self.reset_animation()
+            else:
+                offset = OSDFont.GetLineHeight()*(progress)
+                
+        ts = twitter.tweets
+        
+        for i,t in enumerate(ts[0:self.tweets_displayed]):
+            text =  t['from_user'] + ": " + t['text']
+            alpha = 0.5
+            if i==self.tweets_displayed-1 and self.animating:
+                alpha = 0.5-progress
+            
+            if alpha > 1.0: alpha = 1.0
+            x=OSDMargin
+            y=ScreenHeight - 2*OSDMargin - OSDFont.GetLineHeight()*(self.tweets_displayed-i)+offset
+            if TextureTarget != GL_TEXTURE_2D:
+                glDisable(TextureTarget)
+            OSDFont.Draw((x, y), text, align=Left, alpha=alpha, 
+                color=(238./255.,236./255.,225./255.),beveled=True)
+    
+twitter_display = TwitterDisplayManager()
         
 
 def TwitterDisplayUpdate():
@@ -2084,8 +2179,10 @@ def TwitterDisplayUpdate():
             progress = 1.
         else:
             offset = OSDFont.GetLineHeight()*(progress)
+    
     ts = twitter.tweets
     ntweets = 3
+
     
     for i,t in enumerate(ts[0:ntweets]):
         text =  t['from_user'] + ": " + t['text']
@@ -2135,7 +2232,8 @@ def DrawOverlays():
         t = reltime / 1000
         DrawOSDEx(OSDTimePos, FormatTime(t, MinutesOnly))
     if TwitterDisplay:
-        TwitterDisplayUpdate()
+        twitter_display.draw()
+        #TwitterDisplayUpdate()
     if CurrentOSDComment and (OverviewMode or not(TransitionRunning)):
         DrawOSD(ScreenWidth/2, \
                 ScreenHeight - 3*OSDMargin - FontSize, \
@@ -2719,15 +2817,10 @@ def TimerTick():
     return redraw
     
 def TwitterTickUpdate():
-    global TwitterAnimate, twitter
-    redraw = False
-    if TwitterAnimate:
-        redraw = True
-    else:
-        if twitter.pending():
-            TwitterAnimate = True
-            redraw = True
-    return redraw
+    global twitter_display
+    if twitter_display.update(): 
+        return True
+    return twitter_display.redraw()
 
 # set cursor visibility
 def SetCursor(visible):
