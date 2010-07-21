@@ -96,11 +96,16 @@ class TweetStream:
             #print "TweetStream:_update_cache skipped due to rate limit"
             return
         # stupid initialization code
-        if self.last_status_id is 0:
-            rval = twitter.searchTwitter(self.query)
-        else:
-            rval = twitter.searchTwitter(self.query,
-                            since_id=self.last_status_id)
+        try:
+            if self.last_status_id is 0:
+                rval = twitter.searchTwitter(self.query)
+            else:
+                rval = twitter.searchTwitter(self.query,
+                                since_id=self.last_status_id)
+        except:
+            raise 
+            print "TweetStream:_update_cache error on query"
+            rval = []
         self.last_query = time.time()
         
         if 'results' in rval:
@@ -122,8 +127,8 @@ class TweetStream:
                         self.new_results += 1
                         self.queue_position += 1
                     else:
-                        print "TweetStream:_update_cache filtered %s: %s\n"%(
-                            r['from_user'], r['text'])
+                        print ("TweetStream:_update_cache filtered %s: %s\n"%(
+                            r['from_user'], r['text'])).encode('utf-8')
                         
                         
         
@@ -211,6 +216,8 @@ def main():
     
 
 if __name__=='__main__':
+    main()
+    sys.exit(0)
     s = TweetStream(["#lastfm"])
     while 1:
         while s.pending():

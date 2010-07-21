@@ -69,7 +69,7 @@ PAR = 1.0
 PollInterval = 0
 PageRangeStart = 0
 PageRangeEnd = 999999
-FontSize = 18
+FontSize = 20
 FontTextureWidth = 512
 FontTextureHeight = 256
 Gamma = 1.0
@@ -82,9 +82,9 @@ ProgressBarAlpha = 128
 CursorImage = None
 CursorHotspot = (0, 0)
 MinutesOnly = False
-OSDMargin = 16
+OSDMargin = 8
 OSDAlpha = 1.0
-OSDTimePos = BottomRight
+OSDTimePos = BottomLeft
 OSDTitlePos = BottomLeft
 OSDPagePos = BottomRight
 OSDStatusPos = TopLeft
@@ -124,7 +124,7 @@ if os.name == "nt":
     if getattr(sys, "frozen", None):
         sys.path.append(root)
     FontPath = []
-    FontList = ["Verdana.ttf", "Arial.ttf"]
+    FontList = ["GIL_____.TTF","Verdana.ttf", "Arial.ttf"]
 else:
     pdftoppmPath = "pdftoppm"
     GhostScriptPath = "gs"
@@ -245,10 +245,13 @@ OverviewMode = False
 LastPage = 0
 WantStatus = False
 
-TwitterDisplay = True
+TwitterQuery = "#SIAMAN10"
+#TwitterQuery = "#lastfm"
+TwitterDisplay = False
 TwitterAnimate = False
 TwitterAnimateStart = None
 TwitterAnimateTime = 500. # in milliseconds (do not forget the decimal!
+
 
 # tool constants (used in info scripts)
 FirstTimeOnly = 2
@@ -934,7 +937,7 @@ Auto = -1
 
 # font renderer class
 class GLFont:
-    def __init__(self, width, height, name, size, search_path=[], default_charset='iso8859-15', extend=1, blur=1):
+    def __init__(self, width, height, name, size, search_path=[], default_charset='iso8859-15', extend=1, blur=0):
         self.width = width
         self.height = height
         self._i_extend = range(extend)
@@ -2037,7 +2040,7 @@ def SaveInfoScript(filename):
 
 class TwitterTweetQueue:
     def __init__(self):
-        self.twitter = tweets.TweetStream(["#lastfm"])
+        self.twitter = tweets.TweetStream(TwitterQuery.split())
         self.new_tweets = []
         self.tweets = []
         
@@ -2077,6 +2080,24 @@ class TwitterDisplayManager:
         self.tweet_display_time = 60
         self.reset_animation()
         
+    def draw_tweet_screen(self):
+        """ 
+        Draw a full screen of twitter tweets
+        """
+        ts = twitter.tweets
+        # determint he number of tweets
+        toshow = min(
+                int((ScreenHeight-2*OSDMargin)/OSDFont.GetLineHeight()),
+                len(ts))
+        offset = (ScreenHeight-2*OSDMargin - OSDFont.GetLineHeight()*toshow)/2.
+        for i,t in enumerate(ts[0:toshow]):
+            text =  t['from_user'] + ": " + t['text']
+            y=ScreenHeight - OSDMargin - OSDFont.GetLineHeight()*(toshow-i) - offset
+            x=OSDMargin
+            if TextureTarget != GL_TEXTURE_2D:
+                glDisable(TextureTarget)
+            OSDFont.Draw((x, y), text, align=Left, 
+                color=(238./255.,236./255.,225./255.),beveled=True)
     def update(self):
         """ 
         Check if we should start doing something! 
@@ -2147,17 +2168,19 @@ class TwitterDisplayManager:
         
         for i,t in enumerate(ts[0:self.tweets_displayed]):
             text =  t['from_user'] + ": " + t['text']
-            alpha = 0.5
+            alpha = 1.
             if i==self.tweets_displayed-1 and self.animating:
-                alpha = 0.5-progress
+                alpha = alpha-progress
             
             if alpha > 1.0: alpha = 1.0
             x=OSDMargin
-            y=ScreenHeight - 2*OSDMargin - OSDFont.GetLineHeight()*(self.tweets_displayed-i)+offset
+            # at screen botom
+            #y=ScreenHeight - 2*OSDMargin - OSDFont.GetLineHeight()*(self.tweets_displayed-i)+offset
+            y=OSDFont.GetLineHeight()*(self.tweets_displayed-0.75-i)-offset
             if TextureTarget != GL_TEXTURE_2D:
                 glDisable(TextureTarget)
             OSDFont.Draw((x, y), text, align=Left, alpha=alpha, 
-                color=(238./255.,236./255.,225./255.),beveled=True)
+                color=(1.,1.,1.),beveled=False)
     
 twitter_display = TwitterDisplayManager()
         
@@ -2233,7 +2256,6 @@ def DrawOverlays():
         DrawOSDEx(OSDTimePos, FormatTime(t, MinutesOnly))
     if TwitterDisplay:
         twitter_display.draw()
-        #TwitterDisplayUpdate()
     if CurrentOSDComment and (OverviewMode or not(TransitionRunning)):
         DrawOSD(ScreenWidth/2, \
                 ScreenHeight - 3*OSDMargin - FontSize, \
@@ -2396,7 +2418,7 @@ def DrawProgress(position):
     glEnable(TextureTarget)
 
 # fade mode
-def DrawFadeMode(intensity, alpha):
+def DrawFadeMode(intensity, alpha,do_flip=True):
     if VideoPlaying: return
     DrawCurrentPage(do_flip=False)
     glDisable(TextureTarget)
@@ -2404,7 +2426,8 @@ def DrawFadeMode(intensity, alpha):
     glColor4d(intensity, intensity, intensity, alpha)
     DrawFullQuad()
     glEnable(TextureTarget)
-    pygame.display.flip()
+    if do_flip:
+        pygame.display.flip()
 
 def FadeMode(intensity):
     t0 = pygame.time.get_ticks()
@@ -2437,6 +2460,42 @@ def FadeMode(intensity):
         if t >= 1.0: break
         DrawFadeMode(intensity, 1.0 - t)
     DrawCurrentPage()
+    
+def TwitterFadeMode(intensity):
+    t0 = pygame.time.get_ticks()
+    while True:
+        if pygame.event.get([KEYDOWN,MOUSEBUTTONUP]): break
+        t = (pygame.time.get_ticks() - t0) * 1.0 / BlankFadeDuration
+        if t >= 1.0: break
+        DrawFadeMode(intensity, t)
+    DrawFadeMode(intensity, 1.0,False)
+    
+    # draw all tweets
+    twitter_display.draw_tweet_screen()
+    pygame.display.flip()
+    
+    while True:
+        event = pygame.event.wait()
+        if event.type == QUIT:
+            PageLeft()
+            Quit()
+        elif event.type == VIDEOEXPOSE:
+            DrawFadeMode(intensity, 1.0)
+        elif event.type == MOUSEBUTTONUP:
+            break
+        elif event.type == KEYDOWN:
+            if event.unicode == u'q':
+                pygame.event.post(pygame.event.Event(QUIT))
+            else:
+                break
+
+    t0 = pygame.time.get_ticks()
+    while True:
+        if pygame.event.get([KEYDOWN,MOUSEBUTTONUP]): break
+        t = (pygame.time.get_ticks() - t0) * 1.0 / BlankFadeDuration
+        if t >= 1.0: break
+        DrawFadeMode(intensity, 1.0 - t)
+    DrawCurrentPage()    
 
 # gamma control
 def SetGamma(new_gamma=None, new_black=None, force=False):
@@ -2982,7 +3041,7 @@ def OverviewTogglePageProp(prop, default):
 
 # overview event handler
 def HandleOverviewEvent(event):
-    global OverviewSelection, TimeDisplay
+    global OverviewSelection, TimeDisplay, TwitterDisplay
 
     if event.type == QUIT:
         PageLeft(overview=True)
@@ -2997,6 +3056,9 @@ def HandleOverviewEvent(event):
             SetFullscreen(not Fullscreen)
         elif event.unicode == u't':
             TimeDisplay = not(TimeDisplay)
+            DrawOverview()
+        elif event.unicode == u'k':
+            TwitterDisplay = not(TwitterDisplay)
             DrawOverview()
         elif event.unicode == u'r':
             ResetTimer()
@@ -3149,7 +3211,7 @@ def HandleEvent(event):
     global HaveMark, ZoomMode, Marking, Tracing, Panning, SpotRadius, FileStats
     global MarkUL, MarkLR, MouseDownX, MouseDownY, PanAnchorX, PanAnchorY
     global ZoomX0, ZoomY0, RTrunning, RTrestart, StartTime, PageEnterTime
-    global CurrentTime, TimeDisplay, TimeTracking, ProgressBarPos
+    global CurrentTime, TimeDisplay, TimeTracking, ProgressBarPos, TwitterDisplay
 
     if event.type == QUIT:
         PageLeft()
@@ -3179,6 +3241,11 @@ def HandleEvent(event):
             FadeMode(0.0)
         elif event.unicode == u'w':
             FadeMode(1.0)
+        elif event.unicode == u'a':
+            TwitterFadeMode(0.0)
+        elif event.unicode == u'k':
+            TwitterDisplay = not(TwitterDisplay)
+            DrawCurrentPage()
         elif event.unicode == u't':
             TimeDisplay = not(TimeDisplay)
             DrawCurrentPage()
@@ -3974,7 +4041,7 @@ def ParseOptions(argv):
     global PageRangeStart, PageRangeEnd, FontList, FontSize, Gamma, BlackLevel
     global EstimatedDuration, CursorImage, CursorHotspot, MinutesOnly
     global GhostScriptPath, pdftoppmPath, UseGhostScript, InfoScriptPath
-    global AutoOverview
+    global AutoOverview, TwitterQuery, TwitterDisplay
 
     try:  # unused short options: jknqvxyzEHJKNQUVWXY
         opts, args = getopt.getopt(argv, \
@@ -3985,7 +4052,7 @@ def ParseOptions(argv):
             "zoom=", "gspath=", "meshres=", "noext", "aspect", "memcache", \
             "noback", "pages=", "poll=", "font=", "fontsize=", "gamma=",
             "duration=", "cursor=", "minutes", "layout=", "script=", "cache=",
-            "cachefile=", "autooverview="])
+            "cachefile=", "autooverview=","twitter-query="])
     except getopt.GetoptError, message:
         opterr(message)
 
@@ -3996,6 +4063,7 @@ def ParseOptions(argv):
             ListTransitions()
         if opt in ("-f", "--fullscreen"):
             Fullscreen = not(Fullscreen)
+        
         if opt in ("-e", "--noext"):
             AllowExtensions = not(AllowExtensions)
         if opt in ("-s", "--scale"):
@@ -4153,7 +4221,10 @@ def ParseOptions(argv):
                 assert (BlackLevel >= 0) and (BlackLevel < 255)
             except:
                 opterr("invalid parameter for --cursor")
-
+        if opt in "--twitter-query":
+            TwitterQuery=arg
+            print "Using twitter query '%s'"%(TwitterQuery)
+            TwitterDisplay = True
     for arg in args:
         AddFile(arg)
     if not FileList:
