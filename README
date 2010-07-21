@@ -16,4 +16,8 @@ line to enable the twitter display.
 I'll be working on these kinks.  The current version is the version I used
 to present at the SIAM Annual Meeting in 2010.
 
+Requirements
+------------
+
+twython
 
