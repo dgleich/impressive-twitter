@@ -19,9 +19,8 @@ History
 Todo
 ----
 * Non-blocking updating
-* Explicit message filtering
 * Use twitter streaming API
-
+* Get full message sets if more than 15 messages
 """
 
 __author__ = 'David F. Gleich'

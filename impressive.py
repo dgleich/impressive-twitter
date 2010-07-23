@@ -245,12 +245,19 @@ OverviewMode = False
 LastPage = 0
 WantStatus = False
 
-TwitterQuery = "#SIAMAN10"
-#TwitterQuery = "#lastfm"
+
+# internal twitter commands
+TwitterColor = (1.,1.,1.,)
 TwitterDisplay = False
 TwitterAnimate = False
 TwitterAnimateStart = None
 TwitterAnimateTime = 500. # in milliseconds (do not forget the decimal!
+twitter_display = None
+
+# user conrollable twitter params
+TwitterLines = 3
+TwitterPosition = TopLeft
+TwitterQuery = None
 
 
 # tool constants (used in info scripts)
@@ -2039,8 +2046,8 @@ def SaveInfoScript(filename):
 ##### OPENGL RENDERING #########################################################
 
 class TwitterTweetQueue:
-    def __init__(self):
-        self.twitter = tweets.TweetStream(TwitterQuery.split())
+    def __init__(self,query):
+        self.twitter = tweets.TweetStream(query.split())
         self.new_tweets = []
         self.tweets = []
         
@@ -2073,7 +2080,8 @@ class TwitterTweetQueue:
 twitter = TwitterTweetQueue()       
 
 class TwitterDisplayManager:
-    def __init__(self,max_tweets=3,animate_time = 500):
+    def __init__(self,query,max_tweets=3,animate_time=TwitterAnimateTime):
+        self.twitter = TwitterTweetQueue(query)
         self.max_tweets = max_tweets
         self.animate_time = animate_time
         self.tweets_displayed = 0
@@ -2084,7 +2092,7 @@ class TwitterDisplayManager:
         """ 
         Draw a full screen of twitter tweets
         """
-        ts = twitter.tweets
+        ts = self.twitter.tweets
         # determint he number of tweets
         toshow = min(
                 int((ScreenHeight-2*OSDMargin)/OSDFont.GetLineHeight()),
@@ -2097,7 +2105,7 @@ class TwitterDisplayManager:
             if TextureTarget != GL_TEXTURE_2D:
                 glDisable(TextureTarget)
             OSDFont.Draw((x, y), text, align=Left, 
-                color=(238./255.,236./255.,225./255.),beveled=True)
+                color=TwitterColor,beveled=True)
     def update(self):
         """ 
         Check if we should start doing something! 
@@ -2109,10 +2117,10 @@ class TwitterDisplayManager:
         if self.animating is False:
             # this means we aren't currently doing anything, but
             # could start here.
-            if twitter.pending():
+            if self.twitter.pending():
                 # there is a tweet pending!
                 if self.tweets_displayed < self.max_tweets:
-                    twitter.pop()
+                    self.twitter.pop()
                     self.tweets_displayed += 1
                     return True
                 else:
@@ -2121,7 +2129,7 @@ class TwitterDisplayManager:
             else:
                 # check if we should expire a tweet
                 if self.tweets_displayed > 0:
-                    ts = twitter.tweets
+                    ts = self.twitter.tweets
                     if len(ts) > 0:
                         t = ts[self.tweets_displayed-1]
                         if time.time() > t['pop_time'] + self.tweet_display_time:
@@ -2156,7 +2164,7 @@ class TwitterDisplayManager:
             if progress > 1.:
                 if self.tweet_arriving:
                     # we only animate arrival if the tweet queue is full
-                    twitter.pop()
+                    self.twitter.pop()
                 else:
                     # a tweet is departing...
                     self.tweets_displayed -= 1
@@ -2164,7 +2172,7 @@ class TwitterDisplayManager:
             else:
                 offset = OSDFont.GetLineHeight()*(progress)
                 
-        ts = twitter.tweets
+        ts = self.twitter.tweets
         
         for i,t in enumerate(ts[0:self.tweets_displayed]):
             text =  t['from_user'] + ": " + t['text']
@@ -2254,7 +2262,7 @@ def DrawOverlays():
     if TimeDisplay:
         t = reltime / 1000
         DrawOSDEx(OSDTimePos, FormatTime(t, MinutesOnly))
-    if TwitterDisplay:
+    if TwitterDisplay and twitter_display is not None;
         twitter_display.draw()
     if CurrentOSDComment and (OverviewMode or not(TransitionRunning)):
         DrawOSD(ScreenWidth/2, \
@@ -2462,6 +2470,8 @@ def FadeMode(intensity):
     DrawCurrentPage()
     
 def TwitterFadeMode(intensity):
+    global twitter_display
+    
     t0 = pygame.time.get_ticks()
     while True:
         if pygame.event.get([KEYDOWN,MOUSEBUTTONUP]): break
@@ -2471,7 +2481,8 @@ def TwitterFadeMode(intensity):
     DrawFadeMode(intensity, 1.0,False)
     
     # draw all tweets
-    twitter_display.draw_tweet_screen()
+    if twitter_display is not None:
+        twitter_display.draw_tweet_screen()
     pygame.display.flip()
     
     while True:
@@ -2877,9 +2888,11 @@ def TimerTick():
     
 def TwitterTickUpdate():
     global twitter_display
-    if twitter_display.update(): 
-        return True
-    return twitter_display.redraw()
+    if twitter_display:
+        if twitter_display.update(): 
+            return True
+        return twitter_display.redraw()
+    return False
 
 # set cursor visibility
 def SetCursor(visible):
@@ -4001,6 +4014,8 @@ def SetLayoutSubSpec(key, value):
         OSDPagePos = ParseLayoutPosition(value)
     elif lkey in ('status', 'info'):
         OSDStatusPos = ParseLayoutPosition(value)
+    elif lkey in ('twitter'):
+        TwitterPosition = ParseLayoutPosition(value)
     else:
         opterr("unknown layout element `%s'" % key)
 def SetLayout(spec):
@@ -4052,7 +4067,8 @@ def ParseOptions(argv):
             "zoom=", "gspath=", "meshres=", "noext", "aspect", "memcache", \
             "noback", "pages=", "poll=", "font=", "fontsize=", "gamma=",
             "duration=", "cursor=", "minutes", "layout=", "script=", "cache=",
-            "cachefile=", "autooverview=","twitter-query="])
+            "cachefile=", "autooverview=",
+            "twitter-query=","twitter-lines=","twitter-position="])
     except getopt.GetoptError, message:
         opterr(message)
 
@@ -4225,11 +4241,26 @@ def ParseOptions(argv):
             TwitterQuery=arg
             print "Using twitter query '%s'"%(TwitterQuery)
             TwitterDisplay = True
+        if opt in "--twitter-lines":
+             try:
+                TwitterLines = int(arg)
+                assert TwitterLines >= 0
+            except:
+                opterr("invalid parameter for --twitter-lines")
     for arg in args:
         AddFile(arg)
     if not FileList:
         opterr("no playable files specified")
     return
+    
+    # instantiate twitter
+    if TwitterQuery is not None:
+        twitter_display = TwitterDisplayManager(
+                                query=TwitterQuery,
+                                position=TwitterPosition,
+                                max_tweets=TwitterLines)
+                                
+                                
 
     # glob and filter argument list
     files = []
