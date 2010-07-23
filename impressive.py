@@ -6,6 +6,7 @@
 # portions Copyright (C) 2005 Rob Reid <rreid@drao.nrc.ca>
 # portions Copyright (C) 2006 Ronan Le Hy <rlehy@free.fr>
 # portions Copyright (C) 2007 Luke Campagnola <luke.campagnola@gmail.com>
+# portions Copyright (C) 2007 David F. Gleich <mithandor+impressive@gmail.com>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License, version 2, as
@@ -22,8 +23,8 @@
 
 __title__   = "Impressive"
 __version__ = "0.10.2-twitter"
-__author__  = "Martin J. Fiedler and David F. Gleich"
-__email__   = "martin.fiedler@gmx.net and dgleich@stanford.edu"
+__author__  = "Martin J. Fiedler"
+__email__   = "martin.fiedler@gmx.net"
 __website__ = "http://impressive.sourceforge.net/"
 import sys
 def greet(): print >>sys.stderr, "Welcome to", __title__, "version", __version__
@@ -630,10 +631,10 @@ class Slide(Transition):
         raise AbstractError
     def render(self, t):
         cx, cy, nx, ny = self.origin(t)
-    	glBindTexture(TextureTarget, Tcurrent)
-    	DrawQuad(cx, cy, cx+1.0, cy+1.0)
-    	glBindTexture(TextureTarget, Tnext)
-    	DrawQuad(nx, ny, nx+1.0, ny+1.0)
+        glBindTexture(TextureTarget, Tcurrent)
+        DrawQuad(cx, cy, cx+1.0, cy+1.0)
+        glBindTexture(TextureTarget, Tnext)
+        DrawQuad(nx, ny, nx+1.0, ny+1.0)
 
 class SlideLeft(Slide):
     """Slide to the left"""
@@ -661,10 +662,10 @@ class Squeeze(Transition):
             t1, t2 = (Tnext, Tcurrent)
         else:
             t1, t2 = (Tcurrent, Tnext)
-    	glBindTexture(TextureTarget, t1)
-    	DrawQuad(0.0, 0.0, cx1, cy1)
-    	glBindTexture(TextureTarget, t2)
-    	DrawQuad(nx0, ny0, 1.0, 1.0)
+        glBindTexture(TextureTarget, t1)
+        DrawQuad(0.0, 0.0, cx1, cy1)
+        glBindTexture(TextureTarget, t2)
+        DrawQuad(nx0, ny0, 1.0, 1.0)
 class SqueezeHorizontal(Squeeze):
     def split(self, t): raise AbstractError
     def params(self, t):
@@ -2076,8 +2077,7 @@ class TwitterTweetQueue:
             return t
         else:
             return None
-            
-twitter = TwitterTweetQueue()       
+        
 
 class TwitterDisplayManager:
     def __init__(self,query,max_tweets=3,animate_time=TwitterAnimateTime):
@@ -2188,49 +2188,7 @@ class TwitterDisplayManager:
             if TextureTarget != GL_TEXTURE_2D:
                 glDisable(TextureTarget)
             OSDFont.Draw((x, y), text, align=Left, alpha=alpha, 
-                color=(1.,1.,1.),beveled=False)
-    
-twitter_display = TwitterDisplayManager()
-        
-
-def TwitterDisplayUpdate():
-    global TwitterAnimate, TwitterAnimateStart, TwitterAnimateTime
-    offset = 0.
-    progress = 1.
-    if TwitterAnimate:
-        if TwitterAnimateStart is None:
-            TwitterAnimateStart = pygame.time.get_ticks()
-        progress = (
-            1.*pygame.time.get_ticks() - 1.*TwitterAnimateStart)/TwitterAnimateTime
-        if progress > 1.:
-            twitter.pop()
-            TwitterAnimate = False
-            TwitterAnimateStart = None
-            offset = 0.
-            progress = 1.
-        else:
-            offset = OSDFont.GetLineHeight()*(progress)
-    
-    ts = twitter.tweets
-    ntweets = 3
-
-    
-    for i,t in enumerate(ts[0:ntweets]):
-        text =  t['from_user'] + ": " + t['text']
-        alpha = 0.5
-        if i==ntweets-1 and TwitterAnimate:
-            alpha = 0.5-progress
-        
-        if alpha > 1.0: alpha = 1.0
-        x=OSDMargin
-        y=ScreenHeight - 2*OSDMargin - OSDFont.GetLineHeight()*(ntweets-i)+offset
-        if TextureTarget != GL_TEXTURE_2D:
-            glDisable(TextureTarget)
-        OSDFont.Draw((x, y), text, align=Left, alpha=alpha, 
-            color=(238./255.,236./255.,225./255.),beveled=True)
-        
-        
-        
+                color=TwitterColor,beveled=False)
 
 # draw OSD overlays
 def DrawOverlays():
@@ -2262,7 +2220,7 @@ def DrawOverlays():
     if TimeDisplay:
         t = reltime / 1000
         DrawOSDEx(OSDTimePos, FormatTime(t, MinutesOnly))
-    if TwitterDisplay and twitter_display is not None;
+    if TwitterDisplay and twitter_display is not None:
         twitter_display.draw()
     if CurrentOSDComment and (OverviewMode or not(TransitionRunning)):
         DrawOSD(ScreenWidth/2, \
@@ -4056,7 +4014,7 @@ def ParseOptions(argv):
     global PageRangeStart, PageRangeEnd, FontList, FontSize, Gamma, BlackLevel
     global EstimatedDuration, CursorImage, CursorHotspot, MinutesOnly
     global GhostScriptPath, pdftoppmPath, UseGhostScript, InfoScriptPath
-    global AutoOverview, TwitterQuery, TwitterDisplay
+    global AutoOverview, TwitterQuery, TwitterDisplay, TwitterLines, twitter_display
 
     try:  # unused short options: jknqvxyzEHJKNQUVWXY
         opts, args = getopt.getopt(argv, \
@@ -4242,24 +4200,26 @@ def ParseOptions(argv):
             print "Using twitter query '%s'"%(TwitterQuery)
             TwitterDisplay = True
         if opt in "--twitter-lines":
-             try:
+            try:
                 TwitterLines = int(arg)
                 assert TwitterLines >= 0
             except:
                 opterr("invalid parameter for --twitter-lines")
+                
     for arg in args:
         AddFile(arg)
     if not FileList:
         opterr("no playable files specified")
-    return
+    
     
     # instantiate twitter
     if TwitterQuery is not None:
         twitter_display = TwitterDisplayManager(
                                 query=TwitterQuery,
-                                position=TwitterPosition,
                                 max_tweets=TwitterLines)
-                                
+        
+    ####  this function ends here!
+    return
                                 
 
     # glob and filter argument list
